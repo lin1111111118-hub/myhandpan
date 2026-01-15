@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>金色手碟 - 多調性切換</title>
+    <style>
+        body { background: #000; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; overflow: hidden; font-family: sans-serif; }
+        
+        /* 調性選擇器 */
+        .controls { margin-bottom: 20px; z-index: 100; }
+        select { background: #222; color: #d4af37; border: 1px solid #d4af37; padding: 8px 15px; border-radius: 5px; font-size: 16px; outline: none; }
+
+        .handpan-visual {
+            position: relative;
+            width: 400px; height: 400px;
+            background: radial-gradient(circle at 50% 50%, #d4af37 0%, #a68a2d 25%, #4a3a10 60%, #1a1508 100%);
+            border-radius: 50%;
+            box-shadow: inset 0 0 60px rgba(0,0,0,0.8), 0 20px 80px rgba(0,0,0,1);
+            border: 5px solid #2a220d;
+        }
+
+        .note-dimple { position: absolute; border-radius: 50%; background: radial-gradient(circle at 35% 35%, rgba(0,0,0,0.4) 0%, rgba(255,255,255,0.05) 100%); box-shadow: inset 0 8px 15px rgba(0,0,0,0.6); transform: translate(-50%, -50%); pointer-events: none; }
+        .hit-zone { position: absolute; border-radius: 50%; cursor: pointer; transform: translate(-50%, -50%); border: 1.5px solid rgba(255, 255, 255, 0.4); background: rgba(255, 255, 255, 0); transition: all 0.1s; z-index: 10; display: flex; justify-content: center; align-items: center; }
+        .hit-zone:active { border: 2px solid rgba(255, 255, 255, 0.9); background: rgba(255, 255, 255, 0.15); box-shadow: 0 0 20px rgba(255, 255, 255, 0.4); }
+        .label { color: rgba(255,255,255,0.6); font-size: 12px; pointer-events: none; margin-top: 40px; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <select id="scaleSelect" onchange="updateScale()">
+        <option value="dKurd">D Kurd (標準 9 音)</option>
+        <option value="csMystic">C# Low Mystic</option>
+        <option value="aIntegral">A Integral</option>
+    </select>
+</div>
+
+<div class="handpan-visual" id="pan">
+    <div class="note-dimple" style="width: 120px; height: 120px; top: 50%; left: 50%;"></div>
+    <div id="dingHit" class="hit-zone" style="width: 110px; height: 110px; top: 50%; left: 50%;">
+        <span class="label" id="label-ding">D3</span>
+    </div>
+</div>
+
+<script>
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // 定義不同調性的頻率 (Hz)
+    const scales = {
+        dKurd: { ding: 146.83, side: [220.00, 233.08, 261.63, 293.66, 329.63, 349.23, 392.00, 440.00], names: ["A3","Bb3","C4","D4","E4","F4","G4","A4"] },
+        csMystic: { ding: 138.59, side: [207.65, 220.00, 277.18, 311.13, 329.63, 415.30, 440.00, 554.37], names: ["G#3","A3","C#4","Eb4","E4","G#4","A4","C#5"] },
+        aIntegral: { ding: 110.00, side: [164.81, 174.61, 220.00, 246.94, 261.63, 329.63, 349.23, 440.00], names: ["E3","F3","A3","B3","C4","E4","F4","A4"] }
+    };
+
+    let currentScale = scales.dKurd;
+    const pan = document.getElementById('pan');
+    const sideZones = [];
+
+    // 初始化 8 個側音位
+    const angles = [90, 135, 180, 225, 270, 315, 0, 45];
+    angles.forEach((angle, i) => {
+        const rad = angle * (Math.PI / 180);
+        const x = 200 + 138 * Math.cos(rad);
+        const y = 200 + 138 * Math.sin(rad);
+
+        // 視覺凹槽
+        const dimple = document.createElement('div');
+        dimple.className = 'note-dimple';
+        dimple.style.width = '85px'; dimple.style.height = '85px';
+        dimple.style.left = x + 'px'; dimple.style.top = y + 'px';
+        pan.appendChild(dimple);
+
+        // 點擊區
+        const hit = document.createElement('div');
+        hit.className = 'hit-zone';
+        hit.style.width = '80px'; hit.style.height = '80px';
+        hit.style.left = x + 'px'; hit.style.top = y + 'px';
+        hit.innerHTML = `<span class="label" id="label-${i}"></span>`;
+        hit.onmousedown = () => play(currentScale.side[i]);
+        pan.appendChild(hit);
+        sideZones.push(hit);
+    });
+
+    document.getElementById('dingHit').onmousedown = () => play(currentScale.ding);
+
+    function updateScale() {
+        const val = document.getElementById('scaleSelect').value;
+        currentScale = scales[val];
+        // 更新標籤文字
+        document.getElementById('label-ding').innerText = val === 'dKurd' ? 'D3' : (val === 'csMystic' ? 'C#3' : 'A2');
+        currentScale.names.forEach((name, i) => {
+            document.getElementById(`label-${i}`).innerText = name;
+        });
+    }
+
+    function play(freq) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        [1, 2, 3].forEach(h => {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.frequency.setValueAtTime(freq * h, now);
+            g.gain.setValueAtTime(h === 1 ? 0.4 : 0.1, now);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 3);
+            osc.connect(g); g.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 3);
+        });
+    }
+
+    // 啟動時先更新一次文字
+    updateScale();
+</script>
+</body>
+</html>
